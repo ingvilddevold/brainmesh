@@ -1,0 +1,13 @@
+name: brainmesh
+channels:
+  - conda-forge
+dependencies:
+  - fenics-dolfinx=0.10
+  - numpy
+  - pathlib
+  - pyvista
+  - typer
+  - pyyaml
+  - pip
+  - pip:
+    - pytetwild
