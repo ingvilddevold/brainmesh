@@ -4,7 +4,6 @@ from pathlib import Path
 import numpy as np
 import typer
 import pytetwild
-import pyvista as pv
 import dolfinx
 import ufl
 import basix

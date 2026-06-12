@@ -1,7 +1,6 @@
 import ufl
 import dolfinx
 import numpy as np
-import meshio
 import warnings
 from tqdm import tqdm
 import typer
