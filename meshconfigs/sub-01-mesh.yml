@@ -1,0 +1,37 @@
+surface:
+  clip_origin:
+    x: -1.5
+    y: -40
+    z: -76.5
+  clip_normal:
+    x: 0.0
+    y: 0.0
+    z: 1.0
+  clip_aq_origin:
+    x: 0.0
+    y: -22.5
+    z: -15
+  clip_aq_normal:
+    x: 0.0
+    y: 0.8
+    z: 0.45
+
+mesh:
+  epsilon: 0.0008 #12
+  edge_length_r: 0.015
+
+domains:
+  - {name : parenchyma, id : 2, type : porous}
+  - {name : csf, id : 1, type : fluid}
+  - {name : lv, id : 3, type : fluid}
+  - {name : v4, id : 4, type : fluid}
+  - {name : v3, id : 5, type : fluid}
+
+probes:
+  parenchyma:
+    top_parenchyma: [-0.00308522, -0.0307432, 0.0773058]
+  sas:
+    top_sas: [0.00222775, -0.0155624, 0.077848]
+  ventricular_system:
+    fourth_ventricle: [-0.00161741, -0.0426833, -0.0347576]
+    lateral_ventricles: [0.0208795, -0.0383033, 0.014722]
