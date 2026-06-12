@@ -3,7 +3,8 @@ from pathlib import Path
 
 import numpy as np
 import typer
-import wildmeshing as wm
+import pytetwild
+import pyvista as pv
 import dolfinx
 import ufl
 import basix
@@ -65,16 +66,20 @@ def mesh(
 
     clip_origin_z = config["clip_origin"]["z"] * mm2m
 
-    print("Tetrahedralizing CSG tree with fTetWild...")
-    tetra = wm.Tetrahedralizer(
-        epsilon=0.0008,
-        edge_length_r=0.015,
-        coarsen=True,
-        max_threads=16, 
-        stop_energy=10,
-        max_its=30
-    )
+    print("Loading surfaces from PLY files...")
+    required_files = [
+        "skull.ply",
+        "parenchyma_incl_ventr.ply",
+        "LV.ply",
+        "V4.ply",
+        "V3_conn.ply",
+    ]
+    missing_files = [f for f in required_files if not (surface_dir / f).exists()]
+    if missing_files:
+        raise FileNotFoundError(f"Missing required PLYs: {missing_files}. Run extractSurfaces.py first.")
 
+    # Build CSG tree for tetrahedralization
+    # Union of skull with the inner structures (parenchyma + ventricles)
     csg_dict = {
         "operation": "union",
         "left": str(surface_dir / "skull.ply"),
@@ -93,31 +98,67 @@ def mesh(
         },
     }
 
-    def extract_paths(d):
-        paths = []
-        for key, value in d.items():
-            if isinstance(value, dict):
-                paths.extend(extract_paths(value))
-            elif isinstance(value, str) and value.endswith(".ply"):
-                paths.append(Path(value))
-        return paths
+    # Write CSG to temporary file
+    import tempfile
+    csg_file = Path(tempfile.gettempdir()) / "brain_mesh_csg.json"
+    with open(csg_file, "w") as f:
+        json.dump(csg_dict, f, indent=2)
+    print(f"CSG file written to: {csg_file}")
 
-    missing_files = [f for f in extract_paths(csg_dict) if not f.exists()]
-    if missing_files:
-        raise FileNotFoundError(f"Missing required PLYs: {missing_files}. Run extractSurfaces.py first.")
+    print("Tetrahedralizing with pytetwild using CSG approach...")
+    
+    # Use tetrahedralize_csg which automatically assigns markers based on containment
+    tet_mesh = pytetwild.tetrahedralize_csg(
+        str(csg_file),
+        epsilon=1e-3,
+        edge_length_r=0.05,
+        stop_energy=10.0,
+        coarsen=False,
+        num_threads=0,
+        loglevel=3,
+    )
 
-    tetra.load_csg_tree(json.dumps(csg_dict))
-    tetra.tetrahedralize()
-    point_array, cell_array, marker = tetra.get_tet_mesh()
+    print(f"Generated mesh with {tet_mesh.n_cells} cells and {tet_mesh.n_points} points")
 
-    print("Mapping subdomains via original np.isin logic...")
-    raw_markers = np.copy(marker).flatten()
-    labels = np.copy(raw_markers) 
+    # Extract the mesh data and markers from the returned PyVista object.
+    # pytetwild returns a PyVista mesh with a cell array and a marker cell array.
+    available_cells = getattr(tet_mesh, "cells_dict", {})
+    cells = available_cells.get("tetra", np.array([], dtype=np.int64))
+    if cells.size == 0 and tet_mesh.n_cells > 0:
+        connectivity = np.asarray(tet_mesh.cells, dtype=np.int64)
+        if connectivity.size > 0:
+            node_count = int(connectivity[0])
+            stride = node_count + 1
+            if connectivity.size % stride == 0:
+                reshaped = connectivity.reshape(-1, stride)
+                if np.all(reshaped[:, 0] == node_count):
+                    cells = reshaped[:, 1:]
+    if cells.size == 0:
+        cells = available_cells.get("hexahedron", np.array([], dtype=np.int64))
+    if cells.size == 0:
+        raise ValueError("No tetrahedral or hexahedral cells found in output mesh")
 
+    point_array = tet_mesh.points
+    cell_array = cells
+
+    # Get markers from the mesh, using the PyVista cell-data view if available.
+    if "marker" in tet_mesh.cell_data:
+        raw_markers = np.asarray(tet_mesh["marker"], dtype=np.int32)
+    else:
+        print("Warning: No marker field found in mesh, using default markers")
+        raw_markers = np.ones(len(cell_array), dtype=np.int32)
+    
+    labels = np.copy(raw_markers)
+
+    print(f"Marker value distribution: {np.bincount(raw_markers)}")
+
+    print("Mapping fTetWild markers to subdomain IDs...")
     subdomains = np.copy(raw_markers)
     subdomains[np.isin(raw_markers, [PAR_FTW])] = 100 
     subdomains[np.isin(raw_markers, [CSF_FTW, LV_FTW, V4_FTW, V3_FTW])] = FLUID_ID
     subdomains[np.isin(subdomains, [100])] = POROUS_ID
+
+    print(f"Marked {np.sum(subdomains == FLUID_ID)} fluid cells and {np.sum(subdomains == POROUS_ID)} porous cells")
 
     print("Constructing FEniCSx mesh...")
     domain = dolfinx.mesh.create_mesh(

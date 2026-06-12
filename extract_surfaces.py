@@ -3,11 +3,12 @@ import pyvista as pv
 import numpy as np
 import skimage.morphology as skim
 import scipy.ndimage as ndi
-import os
-import click
+import typer
 import skimage
 import yaml
 from pathlib import Path
+
+app = typer.Typer()
 
 FS_V3 = 14
 FS_V4 = 15
@@ -47,11 +48,22 @@ def binary_smoothing(img, footprint=skim.ball(1)):
     return skim.binary_closing(openend, footprint=footprint)
 
 
-@click.command()
-@click.option("--input", "-i", help="Input file (white matter segmented MRI)")
-@click.option("--output", "-o", default="surfaces/", help="output directory")
-@click.option("--config_file", "-c", help="config file")
-def extract_surfaces(input, output, config_file):
+def infer_output_dir(input: Path, config_file: Path) -> Path:
+    config_name = config_file.stem
+    if "sub-" in config_name:
+        candidate = config_name.split("sub-")[-1].split("_")[0]
+        if candidate:
+            return Path("surfaces") / f"sub-{candidate}"
+    input_name = input.stem
+    return Path("surfaces") / input_name
+
+
+@app.command()
+def extract_surfaces(
+    input: Path = typer.Option(..., "--input", "-i", help="Input file (white matter segmented MRI)"),
+    output_dir: Path | None = typer.Option(None, "--output", "-o", help="Output directory"),
+    config_file: Path = typer.Option(..., "--config", "-c", help="Config file"),
+):
 
     # Open config file
     with open(config_file) as conf_file:
@@ -85,7 +97,7 @@ def extract_surfaces(input, output, config_file):
         -config["clip_aq_normal"]["z"],
     )
 
-    os.makedirs(output, exist_ok=True)
+    output_dir.mkdir(parents=True, exist_ok=True)
 
     # load white matter data
     pad_width = 5
@@ -108,7 +120,7 @@ def extract_surfaces(input, output, config_file):
     skull_surf.points = nibabel.affines.apply_affine(seg.affine, skull_surf.points)
     skull_surf = skull_surf.clip_closed_surface(normal=clip_normal, origin=clip_origin)
     skull_surf.compute_normals(inplace=True, flip_normals=False)
-    pv.save_meshio(Path(output) / "skull.ply", skull_surf.scale(mm2m))
+    pv.save_meshio(Path(output_dir) / "skull.ply", skull_surf.scale(mm2m))
 
     # generate parenchyma surface - everything but CSF space
     par_mask = skim.remove_small_objects(par_mask, 1e3)
@@ -173,7 +185,7 @@ def extract_surfaces(input, output, config_file):
     LV_surf.points = nibabel.affines.apply_affine(seg.affine, LV_surf.points)
     LV_surf = LV_surf.clip_closed_surface(normal=clip_normal, origin=clip_origin)
     LV_surf.compute_normals(inplace=True, flip_normals=False)
-    pv.save_meshio(Path(output) / "LV.ply", LV_surf.scale(mm2m))
+    pv.save_meshio(Path(output_dir) / "LV.ply", LV_surf.scale(mm2m))
 
     # compute V3 and V4 surface
     # V34_mask = np.isin(img, [FS_V3, FS_V4]) + conn_V3_LV
@@ -193,7 +205,7 @@ def extract_surfaces(input, output, config_file):
     V3_surf.points = nibabel.affines.apply_affine(seg.affine, V3_surf.points)
     # V3_surf = V3_surf.clip_closed_surface(normal=clip_normal, origin=clip_origin)
     V3_surf.compute_normals(inplace=True, flip_normals=False)
-    pv.save_meshio(Path(output) / "V3.ply", V3_surf.scale(mm2m))
+    pv.save_meshio(Path(output_dir) / "V3.ply", V3_surf.scale(mm2m))
 
     V3_mask2 = V3_mask #+ conn_V3_V4 + conn_V3_LV
     V3_mask2 = skim.binary_dilation(V3_mask2, footprint=skim.ball(1))
@@ -204,7 +216,7 @@ def extract_surfaces(input, output, config_file):
     # clip to get aqueduct cross-section
     V3_surf = V3_surf.clip_closed_surface(normal=clip_aq_normal, origin=clip_aq_origin)
     V3_surf.compute_normals(inplace=True, flip_normals=False)
-    pv.save_meshio(Path(output) / "V3_conn.ply", V3_surf.scale(mm2m))
+    pv.save_meshio(Path(output_dir) / "V3_conn.ply", V3_surf.scale(mm2m))
 
     V4_mask1 = V4_mask #+ V3_mask2
     V4_mask1 = skim.binary_dilation(V4_mask1, footprint=skim.ball(1.5))
@@ -216,7 +228,7 @@ def extract_surfaces(input, output, config_file):
     V4_surf = V4_surf.clip_closed_surface(normal=clip_aq_normal_V4, origin=clip_aq_origin)
 
     V4_surf.compute_normals(inplace=True, flip_normals=False)
-    pv.save_meshio(Path(output) / "V4.ply", V4_surf.scale(mm2m))
+    pv.save_meshio(Path(output_dir) / "V4.ply", V4_surf.scale(mm2m))
 
     # compute a layer of parenchymal tissue around the ventricles
     # to get a watertight ventricular system and
@@ -248,10 +260,10 @@ def extract_surfaces(input, output, config_file):
     par_surf.points = nibabel.affines.apply_affine(seg.affine, par_surf.points)
     par_surf = par_surf.clip_closed_surface(normal=clip_normal, origin=clip_origin)
     par_surf.compute_normals(inplace=True, flip_normals=False)
-    pv.save_meshio(Path(output) / "parenchyma_incl_ventr.ply", par_surf.scale(mm2m))
+    pv.save_meshio(Path(output_dir) / "parenchyma_incl_ventr.ply", par_surf.scale(mm2m))
 
     return
 
 
 if __name__ == "__main__":
-    extract_surfaces()
+    app()

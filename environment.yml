@@ -3,11 +3,17 @@ channels:
   - conda-forge
 dependencies:
   - fenics-dolfinx=0.10
+  - scifem
   - numpy
   - pathlib
   - pyvista
   - typer
+  - tqdm
   - pyyaml
+  - nibabel
+  - meshio
+  - scipy
+  - scikit-image
   - pip
   - pip:
     - pytetwild
