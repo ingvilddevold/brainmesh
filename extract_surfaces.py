@@ -60,8 +60,12 @@ def infer_output_dir(input: Path, config_file: Path) -> Path:
 
 @app.command()
 def extract_surfaces(
-    input: Path = typer.Option(..., "--input", "-i", help="Input file (white matter segmented MRI)"),
-    output_dir: Path | None = typer.Option(None, "--output", "-o", help="Output directory"),
+    input: Path = typer.Option(
+        ..., "--input", "-i", help="Input file (white matter segmented MRI)"
+    ),
+    output_dir: Path | None = typer.Option(
+        None, "--output", "-o", help="Output directory"
+    ),
     config_file: Path = typer.Option(..., "--config", "-c", help="Config file"),
 ):
 
@@ -207,9 +211,9 @@ def extract_surfaces(
     V3_surf.compute_normals(inplace=True, flip_normals=False)
     pv.save_meshio(Path(output_dir) / "V3.ply", V3_surf.scale(mm2m))
 
-    V3_mask2 = V3_mask #+ conn_V3_V4 + conn_V3_LV
+    V3_mask2 = V3_mask  # + conn_V3_V4 + conn_V3_LV
     V3_mask2 = skim.binary_dilation(V3_mask2, footprint=skim.ball(1))
-    V3_mask2 = V3_mask2 + conn_V3_V4 + conn_V3_LV # add conncetions after dilation
+    V3_mask2 = V3_mask2 + conn_V3_V4 + conn_V3_LV  # add conncetions after dilation
     V3_surf = extract_surface(V3_mask2, resolution=resolution, origin=origin)
     V3_surf = V3_surf.smooth_taubin(n_iter=30, pass_band=0.025)
     V3_surf.points = nibabel.affines.apply_affine(seg.affine, V3_surf.points)
@@ -218,14 +222,18 @@ def extract_surfaces(
     V3_surf.compute_normals(inplace=True, flip_normals=False)
     pv.save_meshio(Path(output_dir) / "V3_conn.ply", V3_surf.scale(mm2m))
 
-    V4_mask1 = V4_mask #+ V3_mask2
+    V4_mask1 = V4_mask  # + V3_mask2
     V4_mask1 = skim.binary_dilation(V4_mask1, footprint=skim.ball(1.5))
-    V4_mask1 = V4_mask1 + conn_V3_V4 + V3_mask2 # Note: adding V3_mask2 to get smooth cut
+    V4_mask1 = (
+        V4_mask1 + conn_V3_V4 + V3_mask2
+    )  # Note: adding V3_mask2 to get smooth cut
     V4_surf = extract_surface(V4_mask1, resolution=resolution, origin=origin)
     V4_surf = V4_surf.smooth_taubin(n_iter=30, pass_band=0.025)
     V4_surf.points = nibabel.affines.apply_affine(seg.affine, V4_surf.points)
     # clip to get an aqueduct cross-section
-    V4_surf = V4_surf.clip_closed_surface(normal=clip_aq_normal_V4, origin=clip_aq_origin)
+    V4_surf = V4_surf.clip_closed_surface(
+        normal=clip_aq_normal_V4, origin=clip_aq_origin
+    )
 
     V4_surf.compute_normals(inplace=True, flip_normals=False)
     pv.save_meshio(Path(output_dir) / "V4.ply", V4_surf.scale(mm2m))

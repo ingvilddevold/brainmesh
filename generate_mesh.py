@@ -44,9 +44,7 @@ def mesh(
     output_dir: Path = typer.Option(
         Path("mesh_out"), help="Directory to save FEniCSx XDMF files."
     ),
-    configfile: Path = typer.Option(
-        ..., help="Path to the mesh config file (yaml)."
-    ),
+    configfile: Path = typer.Option(..., help="Path to the mesh config file (yaml)."),
     separate_interfaces: bool = typer.Option(
         False,
         "--separate-interfaces",
@@ -75,7 +73,9 @@ def mesh(
     ]
     missing_files = [f for f in required_files if not (surface_dir / f).exists()]
     if missing_files:
-        raise FileNotFoundError(f"Missing required PLYs: {missing_files}. Run extractSurfaces.py first.")
+        raise FileNotFoundError(
+            f"Missing required PLYs: {missing_files}. Run extractSurfaces.py first."
+        )
 
     # Build CSG tree for tetrahedralization
     # Union of skull with the inner structures (parenchyma + ventricles)
@@ -99,13 +99,14 @@ def mesh(
 
     # Write CSG to temporary file
     import tempfile
+
     csg_file = Path(tempfile.gettempdir()) / "brain_mesh_csg.json"
     with open(csg_file, "w") as f:
         json.dump(csg_dict, f, indent=2)
     print(f"CSG file written to: {csg_file}")
 
     print("Tetrahedralizing with pytetwild using CSG approach...")
-    
+
     # Use tetrahedralize_csg which automatically assigns markers based on containment
     tet_mesh = pytetwild.tetrahedralize_csg(
         str(csg_file),
@@ -117,7 +118,9 @@ def mesh(
         loglevel=3,
     )
 
-    print(f"Generated mesh with {tet_mesh.n_cells} cells and {tet_mesh.n_points} points")
+    print(
+        f"Generated mesh with {tet_mesh.n_cells} cells and {tet_mesh.n_points} points"
+    )
 
     # Extract the mesh data and markers from the returned PyVista object.
     # pytetwild returns a PyVista mesh with a cell array and a marker cell array.
@@ -146,18 +149,20 @@ def mesh(
     else:
         print("Warning: No marker field found in mesh, using default markers")
         raw_markers = np.ones(len(cell_array), dtype=np.int32)
-    
+
     labels = np.copy(raw_markers)
 
     print(f"Marker value distribution: {np.bincount(raw_markers)}")
 
     print("Mapping fTetWild markers to subdomain IDs...")
     subdomains = np.copy(raw_markers)
-    subdomains[np.isin(raw_markers, [PAR_FTW])] = 100 
+    subdomains[np.isin(raw_markers, [PAR_FTW])] = 100
     subdomains[np.isin(raw_markers, [CSF_FTW, LV_FTW, V4_FTW, V3_FTW])] = FLUID_ID
     subdomains[np.isin(subdomains, [100])] = POROUS_ID
 
-    print(f"Marked {np.sum(subdomains == FLUID_ID)} fluid cells and {np.sum(subdomains == POROUS_ID)} porous cells")
+    print(
+        f"Marked {np.sum(subdomains == FLUID_ID)} fluid cells and {np.sum(subdomains == POROUS_ID)} porous cells"
+    )
 
     print("Constructing FEniCSx mesh...")
     domain = dolfinx.mesh.create_mesh(
@@ -169,7 +174,10 @@ def mesh(
 
     def create_cell_tags(mesh, values_array):
         local_entities, local_values = dolfinx.io.distribute_entity_data(
-            mesh, mesh.topology.dim, cell_array.astype(np.int64), values_array.astype(np.int32)
+            mesh,
+            mesh.topology.dim,
+            cell_array.astype(np.int64),
+            values_array.astype(np.int32),
         )
         adj = dolfinx.graph.adjacencylist(local_entities)
         return dolfinx.mesh.meshtags_from_entities(
@@ -220,9 +228,11 @@ def mesh(
     # Locate the cut plane on the CSF boundary (Spinal Outlet)
     def is_cut_plane(x):
         return np.isclose(x[2], clip_origin_z, atol=5e-4)
-    
-    bottom_facets_geom = dolfinx.mesh.locate_entities_boundary(domain, fdim, is_cut_plane)
-    
+
+    bottom_facets_geom = dolfinx.mesh.locate_entities_boundary(
+        domain, fdim, is_cut_plane
+    )
+
     # Isolate the CSF outlet and remove it from the general skull tag
     spinal_outlet_facets = np.intersect1d(csf_outer_facets, bottom_facets_geom)
     skull_facets = np.setdiff1d(csf_outer_facets, spinal_outlet_facets)
@@ -230,17 +240,21 @@ def mesh(
     if separate_interfaces:
         print("Using separate tags for Pia (11) and Ependyma (12)...")
         pia_facets = get_internal_interface_facets(ct2, doms=[CSF_FTW, PAR_FTW])
-        
+
         ependyma_facets_1 = get_internal_interface_facets(ct2, doms=[PAR_FTW, LV_FTW])
         ependyma_facets_2 = get_internal_interface_facets(ct2, doms=[PAR_FTW, V4_FTW])
         ependyma_facets_3 = get_internal_interface_facets(ct2, doms=[PAR_FTW, V3_FTW])
-        ependyma_facets = np.concatenate([ependyma_facets_1, ependyma_facets_2, ependyma_facets_3])
+        ependyma_facets = np.concatenate(
+            [ependyma_facets_1, ependyma_facets_2, ependyma_facets_3]
+        )
 
         marker_values[pia_facets] = PIA_ID
         marker_values[ependyma_facets] = EPENDYMA_ID
     else:
         print("Using unified interface tag (1)...")
-        tissue_csf_facets = get_internal_interface_facets(ct, doms=[FLUID_ID, POROUS_ID])
+        tissue_csf_facets = get_internal_interface_facets(
+            ct, doms=[FLUID_ID, POROUS_ID]
+        )
         marker_values[tissue_csf_facets] = INTERFACE_ID
 
     # Apply common markers

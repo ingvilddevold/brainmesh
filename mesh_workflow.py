@@ -16,9 +16,9 @@ app = typer.Typer(help="Complete brain mesh generation pipeline")
 
 def run_command(cmd: list[str], description: str) -> int:
     """Run a command and report status."""
-    typer.echo(f"\n{'='*60}")
+    typer.echo(f"\n{'=' * 60}")
     typer.echo(f" {description}")
-    typer.echo(f"{'='*60}")
+    typer.echo(f"{'=' * 60}")
     typer.echo(f"Running: {' '.join(cmd)}\n")
     result = subprocess.run(cmd)
     if result.returncode != 0:
@@ -30,57 +30,75 @@ def run_command(cmd: list[str], description: str) -> int:
 
 @app.command()
 def full(
-    subject_id: str = typer.Argument(..., help="Subject identifier for naming files/folders (e.g., sub01)"),
-    input_mri: Path = typer.Argument(..., help="Input segmented MRI file (e.g., sub-01_synthseg.nii.gz)"),
+    subject_id: str = typer.Argument(
+        ..., help="Subject identifier for naming files/folders (e.g., sub01)"
+    ),
+    input_mri: Path = typer.Argument(
+        ..., help="Input segmented MRI file (e.g., sub-01_synthseg.nii.gz)"
+    ),
     config_file: Path = typer.Argument(..., help="Mesh config YAML file"),
-    skip_surfaces: bool = typer.Option(False, "--skip-surfaces", help="Skip surface extraction"),
+    skip_surfaces: bool = typer.Option(
+        False, "--skip-surfaces", help="Skip surface extraction"
+    ),
     skip_mesh: bool = typer.Option(False, "--skip-mesh", help="Skip mesh generation"),
-    skip_fix: bool = typer.Option(False, "--skip-fix", help="Skip overconstrained cell fixing"),
-    skip_refine: bool = typer.Option(False, "--skip-refine", help="Skip mesh refinement"),
-    refinement_steps: int = typer.Option(1, "--refine-steps", "-r", help="Number of refinement iterations"),
+    skip_fix: bool = typer.Option(
+        False, "--skip-fix", help="Skip overconstrained cell fixing"
+    ),
+    skip_refine: bool = typer.Option(
+        False, "--skip-refine", help="Skip mesh refinement"
+    ),
+    refinement_steps: int = typer.Option(
+        1, "--refine-steps", "-r", help="Number of refinement iterations"
+    ),
 ):
     """Run the complete mesh generation pipeline."""
-    
+
     if not input_mri.exists():
         typer.secho(f"Error: Input MRI not found: {input_mri}", fg=typer.colors.RED)
         raise typer.Exit(code=1)
-    
+
     if not config_file.exists():
         typer.secho(f"Error: Config file not found: {config_file}", fg=typer.colors.RED)
         raise typer.Exit(code=1)
-    
-    
+
     # -------------------------------------------------------------------
     # STRICT DIRECTORY STRUCTURE
     # -------------------------------------------------------------------
     surfaces_dir = Path("surfaces") / subject_id
     mesh_dir = Path("meshes") / subject_id
-    
+
     surfaces_dir.mkdir(parents=True, exist_ok=True)
     mesh_dir.mkdir(parents=True, exist_ok=True)
-    
+
     typer.echo(f"Brain Mesh Generation Pipeline")
     typer.echo(f"Subject ID: {subject_id}")
     typer.echo(f"Input MRI: {input_mri.resolve()}")
     typer.echo(f"Config: {config_file.resolve()}")
     typer.echo(f"Surfaces directory: {surfaces_dir.resolve()}")
     typer.echo(f"Mesh directory: {mesh_dir.resolve()}\n")
-    
+
     # Step 1: Extract Surfaces
     if not skip_surfaces:
         run_command(
             [
-                "python", "extract_surfaces.py",
-                "--input", str(input_mri),
-                "--config", str(config_file),
-                "--output", str(surfaces_dir),
+                "python",
+                "extract_surfaces.py",
+                "--input",
+                str(input_mri),
+                "--config",
+                str(config_file),
+                "--output",
+                str(surfaces_dir),
             ],
-            "Step 1: Extract surfaces from MRI segmentation"
+            "Step 1: Extract surfaces from MRI segmentation",
         )
     else:
         typer.secho("⏭ Skipping surface extraction", fg=typer.colors.YELLOW)
         if not surfaces_dir.exists() or not list(surfaces_dir.glob("*.ply")):
-            typer.secho(f"Error: Required PLY surfaces not found in {surfaces_dir}", fg=typer.colors.RED)
+            typer.secho(
+                f"Error: Required PLY surfaces not found in {surfaces_dir}",
+                fg=typer.colors.RED,
+            )
             raise typer.Exit(code=1)
 
     current_mesh_file = mesh_dir / f"{subject_id}.xdmf"
@@ -89,50 +107,62 @@ def full(
     if not skip_mesh:
         run_command(
             [
-                "python", "generate_mesh.py",
-                "--surface-dir", str(surfaces_dir),
-                "--output-dir", str(mesh_dir),
-                "--configfile", str(config_file),
+                "python",
+                "generate_mesh.py",
+                "--surface-dir",
+                str(surfaces_dir),
+                "--output-dir",
+                str(mesh_dir),
+                "--configfile",
+                str(config_file),
             ],
-            "Step 2: Generate volumetric mesh with fTetWild"
+            "Step 2: Generate volumetric mesh with fTetWild",
         )
     else:
         typer.secho("⏭ Skipping mesh generation", fg=typer.colors.YELLOW)
         if not current_mesh_file.exists():
-            typer.secho(f"Error: Expected mesh file {current_mesh_file} not found to resume pipeline.", fg=typer.colors.RED)
+            typer.secho(
+                f"Error: Expected mesh file {current_mesh_file} not found to resume pipeline.",
+                fg=typer.colors.RED,
+            )
             raise typer.Exit(code=1)
-    
+
     # Step 3: Fix Overconstrained Cells
     if not skip_fix:
         fixed_mesh = mesh_dir / f"{subject_id}_fixed.xdmf"
         run_command(
             [
-                "python", "fix_overconstrained_cells.py",
+                "python",
+                "fix_overconstrained_cells.py",
                 str(current_mesh_file),
-                "--output", str(fixed_mesh),
+                "--output",
+                str(fixed_mesh),
             ],
-            "Step 3: Fix overconstrained cells"
+            "Step 3: Fix overconstrained cells",
         )
         current_mesh_file = fixed_mesh
     else:
         typer.secho("⏭ Skipping overconstrained cell fixing", fg=typer.colors.YELLOW)
-    
+
     # Step 4: Refine Mesh
     if not skip_refine:
         final_mesh = mesh_dir / f"{subject_id}_refined.xdmf"
         run_command(
             [
-                "python", "refine_mesh.py",
+                "python",
+                "refine_mesh.py",
                 str(current_mesh_file),
-                "--output", str(final_mesh),
-                "--refine", str(refinement_steps),
+                "--output",
+                str(final_mesh),
+                "--refine",
+                str(refinement_steps),
             ],
-            "Step 4: Refine mesh locally"
+            "Step 4: Refine mesh locally",
         )
         current_mesh_file = final_mesh
     else:
         typer.secho("⏭ Skipping mesh refinement", fg=typer.colors.YELLOW)
-    
+
     typer.secho(f"\nPipeline complete!", fg=typer.colors.GREEN)
     typer.echo(f"Final mesh: {current_mesh_file.resolve()}")
 
