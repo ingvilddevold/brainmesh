@@ -16,16 +16,28 @@ surface:
     y: 0.5
     z: 0.78
 
-mesh:
-  epsilon: 0.0008 #12
-  edge_length_r: 0.015
+subdomains:
+  porous: 1
+  fluid: 2
 
-domains:
-  - {name : parenchyma, id : 2, type : porous}
-  - {name : csf, id : 1, type : fluid}
-  - {name : lv, id : 3, type : fluid}
-  - {name : v4, id : 4, type : fluid}
-  - {name : v3, id : 5, type : fluid}
+regions:
+  fluid:
+    csf: 1
+    lv: 3
+    v4: 4
+    v3: 5
+  porous:
+    parenchyma: 2
+
+boundaries:
+  rigid_skull: 2
+  spinal_outlet: 3
+  fixed_stem: 4
+  aqueduct: 5
+
+interfaces:
+  pia: 11
+  ependyma: 12
 
 probes:
   parenchyma:
