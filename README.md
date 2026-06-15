@@ -26,12 +26,12 @@ python mesh_workflow.py full \
 ```
 
 What this does:
-1. Extracts surfaces $ \rightarrow $ `surfaces/sub01/`
-2. Generates base mesh $ \rightarrow $ `meshes/sub01/work/`
-3. Tags boundaries & interfaces $ \rightarrow $ `meshes/sub01/work/sub01_marked.xdmf`
-4. Fixes overconstrained cells $ \rightarrow $ `meshes/sub01/work/sub01_fixed.xdmf`
-5. Refines mesh locally $ \rightarrow $ Outputs the final mesh to `meshes/sub01/sub01.xdmf`
-6. Archives config $ \rightarrow $ Copies config to `meshes/sub01/sub01.yml.`
+1. Extracts surfaces $\rightarrow$ `surfaces/sub01/`
+2. Generates base mesh $\rightarrow$ `meshes/sub01/work/`
+3. Tags boundaries & interfaces $\rightarrow$ `meshes/sub01/work/sub01_marked.xdmf`
+4. Fixes overconstrained cells $\rightarrow$ `meshes/sub01/work/sub01_fixed.xdmf`
+5. Refines mesh locally $\rightarrow$ Outputs the final mesh to `meshes/sub01/sub01.xdmf`
+6. Archives config $\rightarrow$ Copies config to `meshes/sub01/sub01.yml.`
 
 **Note**: To view all available pipeline steps and usage instructions from the command line, run `python mesh_workflow.py steps`.
 
