@@ -10,7 +10,7 @@ conda activate brainmesh
 ```
 
 ## Data
-MRI data from [Williams et al, 2023] has been segmented with SynthSeg and is found in the `mridata/` directory. 
+MRI data from [Williams et al, 2023](https://doi.org/10.1371/journal.pbio.3002035) has been segmented with SynthSeg and is found in the `mridata/` directory. 
 Raw MRI data was downloaded from [OpenNeuro (ds004478, v1.0.2)](https://openneuro.org/datasets/ds004478/versions/1.0.2).
 
 
@@ -126,9 +126,9 @@ Inspect the geometry in Paraview to find appropriate values.
 The config files can also contain information about the mesh tags for later simulations, or define specific points for postprocessing.
 
 
-## FEniCSx Marker Reference
+## Markers
 
-When loading the `.xdmf` files into FEniCSx, use the following integer IDs:
+The generated mesh tags follow the following conventions. 
 
 ### Subdomains (Cells)
 
@@ -136,16 +136,16 @@ We generate two sets of subdomain markers. The `subdomains` tag separate the por
 | ID | Type | Domain | Description |
 | :--- | :--- | :--- | :--- |
 | **`1`** | Subdomain | Porous | Parenchyma |
-| **`2`** | Subdomain | Fluid | Subarachnoid space and ventricles 
+| **`2`** | Subdomain | Fluid | Subarachnoid space and ventricles |
 
 The `subdomains_ftetwild` further separates the fluid space (for postprocessing purposes), as:
 | ID | Type | Domain | Description |
 | :--- | :--- | :--- | :--- |
-| **`1`** | Subdomain | Fluid | Subarachnoid space 
+| **`1`** | Subdomain | Fluid | Subarachnoid space |
 | **`2`** | Subdomain | Porous | Parenchyma |
-| **`3`** | Subdomain | Fluid | Lateral ventricles (empty for idealized)
-| **`4`** | Subdomain | Fluid | Fourth ventricle
-| **`5`** | Subdomain | Fluid | Third ventricles
+| **`3`** | Subdomain | Fluid | Lateral ventricles |
+| **`4`** | Subdomain | Fluid | Fourth ventricle |
+| **`5`** | Subdomain | Fluid | Third ventricles |
 
 ### Boundaries and interfaces (Facets)
 The `boundaries` facet tags contain:
