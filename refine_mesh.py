@@ -11,7 +11,6 @@ app = typer.Typer(
     help="Refine an input XDMF mesh locally around SSAS/Aqueduct and update FEniCSx tags."
 )
 
-# Target Mapping Values
 V4_FTW = 4  # 4th Ventricle (from subdomains_ftetwild)
 V3_FTW = 5  # 3rd Ventricle (from subdomains_ftetwild)
 SSAS_FACET_TAG = 3  # Spinal Subarachnoid Space outlet (from boundaries)
@@ -40,7 +39,7 @@ def read_all_tags(
                     print(
                         f"Warning: Cell tag '{name}' not found in the input mesh. Skipping."
                     )
-
+        mesh.topology.create_connectivity(mesh.topology.dim - 1, mesh.topology.dim)
         # Read facet tags
         for name in facet_tag_names:
             try:
@@ -191,7 +190,7 @@ def refine(
 
     # Standard tags that we want to preserve through the refinement
     expected_cell_tags = [mesh_tags_name, "subdomains_ftetwild"]
-    expected_facet_tags = ["boundaries"]
+    expected_facet_tags = ["boundaries", "boundaries_split"]
 
     mesh, cell_tags, facet_tags = read_all_tags(
         input_mesh, expected_cell_tags, expected_facet_tags

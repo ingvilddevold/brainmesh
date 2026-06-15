@@ -360,6 +360,7 @@ def fix(
         "subdomains_ftetwild", help="Name of the secondary cell MeshTags"
     ),
     facet_tag_name: str = typer.Option("boundaries", help="Name of the facet MeshTags"),
+    facet_tag_name2: str = typer.Option("boundaries_split", help="Name of the second facet MeshTags"),
 ):
     """Refine cells that are overconstrained iteratively and preserve all cell and facet markers."""
 
@@ -369,7 +370,7 @@ def fix(
     typer.echo(f"Reading in mesh: {infile}")
 
     expected_cell_tags = [cell_tag_name1, cell_tag_name2]
-    expected_facet_tags = [facet_tag_name]
+    expected_facet_tags = [facet_tag_name, facet_tag_name2]
 
     mesh, cell_tags, facet_tags = read_all_tags(
         infile, expected_cell_tags, expected_facet_tags

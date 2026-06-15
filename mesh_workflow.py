@@ -2,12 +2,14 @@
 """
 Manage the full brain mesh generation pipeline:
 1. Extract surfaces from MRI segmentation
-2. Generate mesh with fTetWild
-3. Fix overconstrained cells
-4. Refine mesh locally in SSAS and aqueduct regions
+2. Generate base volumetric mesh with fTetWild
+3. Tag boundaries and interfaces
+4. Fix overconstrained cells
+5. Refine mesh locally in SSAS and aqueduct regions
 """
 
 import subprocess
+import shutil
 from pathlib import Path
 import typer
 
@@ -40,7 +42,12 @@ def full(
     skip_surfaces: bool = typer.Option(
         False, "--skip-surfaces", help="Skip surface extraction"
     ),
-    skip_mesh: bool = typer.Option(False, "--skip-mesh", help="Skip mesh generation"),
+    skip_mesh: bool = typer.Option(
+        False, "--skip-mesh", help="Skip volumetric mesh generation"
+    ),
+    skip_tags: bool = typer.Option(
+        False, "--skip-tags", help="Skip boundary and interface tagging"
+    ),
     skip_fix: bool = typer.Option(
         False, "--skip-fix", help="Skip overconstrained cell fixing"
     ),
@@ -61,21 +68,41 @@ def full(
         typer.secho(f"Error: Config file not found: {config_file}", fg=typer.colors.RED)
         raise typer.Exit(code=1)
 
-    # -------------------------------------------------------------------
-    # STRICT DIRECTORY STRUCTURE
-    # -------------------------------------------------------------------
     surfaces_dir = Path("surfaces") / subject_id
     mesh_dir = Path("meshes") / subject_id
+    work_dir = mesh_dir / "work"
 
     surfaces_dir.mkdir(parents=True, exist_ok=True)
     mesh_dir.mkdir(parents=True, exist_ok=True)
+    # Only create work_dir if there are intermediate steps
+    if not (skip_tags and skip_fix and skip_refine):
+        work_dir.mkdir(parents=True, exist_ok=True)
+
+    target_final_mesh = mesh_dir / f"{subject_id}.xdmf"
+
+    if skip_tags and skip_fix and skip_refine:
+        step2_out_dir = mesh_dir
+        step2_out_file = target_final_mesh
+    else:
+        step2_out_dir = work_dir
+        step2_out_file = work_dir / "work.xdmf"
+
+    step3_out_file = (
+        target_final_mesh
+        if (skip_fix and skip_refine)
+        else work_dir / f"{subject_id}_marked.xdmf"
+    )
+    step4_out_file = (
+        target_final_mesh if skip_refine else work_dir / f"{subject_id}_fixed.xdmf"
+    )
+    step5_out_file = target_final_mesh
 
     typer.echo(f"Brain Mesh Generation Pipeline")
-    typer.echo(f"Subject ID: {subject_id}")
+    typer.echo(f"Mesh name: {subject_id}")
     typer.echo(f"Input MRI: {input_mri.resolve()}")
     typer.echo(f"Config: {config_file.resolve()}")
     typer.echo(f"Surfaces directory: {surfaces_dir.resolve()}")
-    typer.echo(f"Mesh directory: {mesh_dir.resolve()}\n")
+    typer.echo(f"Mesh target directory: {mesh_dir.resolve()}\n")
 
     # Step 1: Extract Surfaces
     if not skip_surfaces:
@@ -101,7 +128,8 @@ def full(
             )
             raise typer.Exit(code=1)
 
-    current_mesh_file = mesh_dir / f"{subject_id}.xdmf"
+    # Pointer tracking for linear pipeline flow
+    current_mesh_file = None
 
     # Step 2: Generate Mesh
     if not skip_mesh:
@@ -112,59 +140,90 @@ def full(
                 "--surface-dir",
                 str(surfaces_dir),
                 "--output-dir",
-                str(mesh_dir),
+                str(step2_out_dir),
+            ],
+            "Step 2: Generate base volumetric mesh with fTetWild",
+        )
+        current_mesh_file = step2_out_file
+    elif step2_out_file.exists():
+        current_mesh_file = step2_out_file
+    elif target_final_mesh.exists():
+        current_mesh_file = target_final_mesh
+
+    if not current_mesh_file or not current_mesh_file.exists():
+        typer.secho(
+            "Error: Cannot find an input mesh to continue the pipeline.",
+            fg=typer.colors.RED,
+        )
+        raise typer.Exit(code=1)
+
+    # Step 3: Tag Boundaries and Interfaces
+    if not skip_tags:
+        run_command(
+            [
+                "python",
+                "tag_boundaries.py",
+                str(current_mesh_file),
+                "--output",
+                str(step3_out_file),
                 "--configfile",
                 str(config_file),
             ],
-            "Step 2: Generate volumetric mesh with fTetWild",
+            "Step 3: Generate boundary and interface markers",
         )
-    else:
-        typer.secho("⏭ Skipping mesh generation", fg=typer.colors.YELLOW)
-        if not current_mesh_file.exists():
-            typer.secho(
-                f"Error: Expected mesh file {current_mesh_file} not found to resume pipeline.",
-                fg=typer.colors.RED,
-            )
-            raise typer.Exit(code=1)
+        current_mesh_file = step3_out_file
+    elif step3_out_file.exists():
+        current_mesh_file = step3_out_file
 
-    # Step 3: Fix Overconstrained Cells
+    # Step 4: Fix Overconstrained Cells
     if not skip_fix:
-        fixed_mesh = mesh_dir / f"{subject_id}_fixed.xdmf"
         run_command(
             [
                 "python",
                 "fix_overconstrained_cells.py",
                 str(current_mesh_file),
                 "--output",
-                str(fixed_mesh),
+                str(step4_out_file),
             ],
-            "Step 3: Fix overconstrained cells",
+            "Step 4: Fix overconstrained cells",
         )
-        current_mesh_file = fixed_mesh
-    else:
-        typer.secho("⏭ Skipping overconstrained cell fixing", fg=typer.colors.YELLOW)
+        current_mesh_file = step4_out_file
+    elif step4_out_file.exists():
+        current_mesh_file = step4_out_file
 
-    # Step 4: Refine Mesh
+    # Step 5: Refine Mesh
     if not skip_refine:
-        final_mesh = mesh_dir / f"{subject_id}_refined.xdmf"
         run_command(
             [
                 "python",
                 "refine_mesh.py",
                 str(current_mesh_file),
                 "--output",
-                str(final_mesh),
+                str(step5_out_file),
                 "--refine",
                 str(refinement_steps),
             ],
-            "Step 4: Refine mesh locally",
+            "Step 5: Refine mesh locally",
         )
-        current_mesh_file = final_mesh
+        current_mesh_file = step5_out_file
+    elif step5_out_file.exists():
+        current_mesh_file = step5_out_file
     else:
         typer.secho("⏭ Skipping mesh refinement", fg=typer.colors.YELLOW)
 
+
+    # Copy the config to ensure full reproducibility of the resulting mesh
+    final_config = mesh_dir / f"{subject_id}{config_file.suffix}"
+    shutil.copy(str(config_file), str(final_config))
+    typer.echo(f"\n✓ Copied configuration settings to: {final_config.name}")
+
+    # Delete the temporary work directory holding any intermediate steps
+    # if work_dir.exists():
+    #    shutil.rmtree(work_dir)
+    #    typer.echo("✓ Cleaned up intermediate workspace files.")
+
     typer.secho(f"\nPipeline complete!", fg=typer.colors.GREEN)
-    typer.echo(f"Final mesh: {current_mesh_file.resolve()}")
+    typer.echo(f"Final records directory: {mesh_dir.resolve()}")
 
 
 @app.command()
@@ -174,39 +233,29 @@ def steps():
 Pipeline Steps:
 
 1. EXTRACT SURFACES
-   python extract_surfaces.py --input MRI.nii.gz --config_file config.yml --output-dir surfaces/sub01/
-   
-   Extracts PLY surfaces from segmented MRI:
-   - skull, parenchyma_incl_ventr, LV, V3, V4 ventricles
-   
-   Output: surfaces/sub01/*.ply
+   python extract_surfaces.py --input MRI.nii.gz --config config.yml --output surfaces/sub01/
 
-2. GENERATE MESH
-   python generate_mesh.py --surface-dir surfaces/sub01/ --configfile config.yml --output-dir mesh/sub01/
-   
-   Uses fTetWild to tetrahedralize the brain geometry
-   Creates subdomain markers (fluid/porous) and boundary markers
-   
-   Output: mesh/sub01/sub01.xdmf
+2. GENERATE BASE MESH
+   python generate_mesh.py --surface-dir surfaces/sub01/ --output-dir meshes/sub01/work/
+   (Note: If this is the last active step, it outputs directly to meshes/sub01/sub01.xdmf)
 
-3. FIX OVERCONSTRAINED CELLS
-   python fix_overconstrained_cells.py fix mesh/sub01/sub01.xdmf -o mesh/sub01/sub01_fixed.xdmf
-   
-   Refines cells where all 4 vertices are on the boundary
-   Preserves all markers during refinement
-   
-   Output: mesh/sub01/sub01_fixed.xdmf 
+3. TAG BOUNDARIES & INTERFACES
+   python tag_boundaries.py input.xdmf -o meshes/sub01/work/sub01_marked.xdmf --configfile config.yml
+   (Generates both 'boundaries' and 'boundaries_split' inside the same file)
 
-4. REFINE MESH LOCALLY
-   python refine_mesh.py refine mesh/sub01/sub01_fixed.xdmf -o mesh/sub01/sub01_refined.xdmf --refine 1
-   
-   Locally refines mesh exclusively around the Aqueduct and SSAS
-   Preserves all existing mesh tags correctly.
-   
-   Output: mesh/sub01/sub01_refined.xdmf 
+4. FIX OVERCONSTRAINED CELLS
+   python fix_overconstrained_cells.py input.xdmf -o meshes/sub01/work/sub01_fixed.xdmf
+
+5. REFINE MESH LOCALLY
+   python refine_mesh.py input.xdmf -o meshes/sub01/sub01.xdmf --refine 1
+   (Last step natively writes the final mesh to ensure HDF5 links are perfectly encoded)
+
+6. CLEANUP & ARCHIVE CONFIG
+   Copies 'config.yml' over as 'meshes/sub01/sub01.yml' for audit reproducibility.
+   Deletes the 'meshes/sub01/work/' temporary workspace directory.
 
 OR RUN FULL PIPELINE:
-   python mesh_workflow.py full sub01 sub-01_synthseg.nii.gz config.yml -o output_dir/
+   python mesh_workflow.py full sub01 sub-01_synthseg.nii.gz config.yml
 """
     typer.echo(steps_text)
 
