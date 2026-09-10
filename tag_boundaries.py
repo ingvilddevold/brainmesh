@@ -20,6 +20,7 @@ FLUID_ID = 2
 INTERFACE_ID = 1
 PIA_ID = 11
 EPENDYMA_ID = 12
+SV_ID = 13
 SKULL_ID = 2
 SPINAL_CANAL_ID = 3
 FIXED_STEM_ID = 4
@@ -122,8 +123,14 @@ def mark(
         [ependyma_facets_1, ependyma_facets_2, ependyma_facets_3]
     )
 
+    # SV (Foramina): interface between SAS fluid (CSF) and the ventricles
+    sv_facets_1 = scifem.mesh.find_interface(ct2, [CSF_FTW], [LV_FTW])
+    sv_facets_2 = scifem.mesh.find_interface(ct2, [CSF_FTW], [V4_FTW])
+    sv_facets = np.concatenate([sv_facets_1, sv_facets_2])
+
     markers_split[pia_facets] = PIA_ID
     markers_split[ependyma_facets] = EPENDYMA_ID
+    markers_split[sv_facets] = SV_ID
 
     # Apply common markers to BOTH schemes
     for markers in [markers_unified, markers_split]:
