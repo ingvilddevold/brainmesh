@@ -162,6 +162,7 @@ In `boundaries_split`, the interface (1) is split into two separate tags:
 | :--- | :--- | :--- | :--- |
 | **`11`** | Interface | Pial Membrane | SAS-parenchyma interface|
 | **`12`** | Interface | Ependyma | ventricle-parenchyma interface|
+| **`13`** | Interface | SV | SAS-ventricle interface|
 
-The remain tags are as in `boundaries`.
+The remaining tags are as in `boundaries`.
 
