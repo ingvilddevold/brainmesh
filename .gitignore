@@ -2,3 +2,6 @@ surfaces/
 tmp/
 __pycache__/
 __tracked_surface.stl
+
+.devcontainer/
+.vscode
