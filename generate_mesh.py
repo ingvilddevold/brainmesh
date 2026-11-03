@@ -5,6 +5,8 @@ from typing import Annotated
 import numpy as np
 import pyvista as pv
 import typer
+from scipy.sparse import coo_matrix
+from scipy.sparse.csgraph import connected_components
 from vtkmodules.vtkFiltersCore import vtkImplicitPolyDataDistance
 
 app = typer.Typer(help="CLI for generating realistic brain meshes (Volumetric only).")
@@ -69,6 +71,53 @@ def _sizing_field(
     return size
 
 
+def _merge_stray_cells(cells: np.ndarray, markers: np.ndarray) -> np.ndarray:
+    """Make the parenchyma, LV, V4 and V3 one connected region each, by giving any
+    smaller cluster of their cells the marker it shares most faces with.
+
+    The LV and V3 surfaces run almost parallel around the foramina of Monro, and the
+    V3 and V4 surfaces share a cap at the aqueduct, where fTetWild can't always separate
+    them. It leaves a few cells with the wrong marker, which show up as fragments on the
+    interfaces there and can partly block the aqueduct. The SAS is left out, as it has
+    real pockets enclosed by the parenchyma surface.
+    """
+    sorted_cells = np.sort(cells, axis=1)
+    faces = np.vstack([np.delete(sorted_cells, i, axis=1) for i in range(4)])
+    owners = np.tile(np.arange(len(cells)), 4)
+    _, face_ids = np.unique(faces, axis=0, return_inverse=True)
+    order = np.argsort(face_ids.ravel())
+    face_ids, owners = face_ids.ravel()[order], owners[order]
+    # Interior faces: each appears twice, so sorted copies are neighbours
+    shared = face_ids[1:] == face_ids[:-1]
+    c0, c1 = owners[:-1][shared], owners[1:][shared]
+
+    markers = markers.copy()
+    num_changed = 0
+    while True:
+        same = markers[c0] == markers[c1]
+        adjacency = coo_matrix(
+            (np.ones(same.sum()), (c0[same], c1[same])), shape=(len(cells), len(cells))
+        )
+        _, clusters = connected_components(adjacency, directed=False)
+        strays = []
+        for region in (PAR_FTW, LV_FTW, V4_FTW, V3_FTW):
+            ids, counts = np.unique(clusters[markers == region], return_counts=True)
+            strays.extend(ids[counts < counts.max()] if len(ids) else [])
+        if not strays:
+            break
+        for stray in strays:
+            member = clusters == stray
+            # Skip a cluster already merged into its neighbour earlier in this pass
+            boundary = member[c0] != member[c1]
+            neighbours = np.r_[markers[c0[boundary & ~member[c0]]], markers[c1[boundary & ~member[c1]]]]
+            neighbours = neighbours[neighbours != markers[member][0]]
+            if len(neighbours):
+                num_changed += member.sum()
+                markers[member] = np.bincount(neighbours).argmax()
+    print(f"Merged {num_changed} stray cells")
+    return markers
+
+
 @app.command()
 def mesh(
     surface_dir: Annotated[
@@ -104,10 +153,11 @@ def mesh(
         float,
         typer.Option(
             help="fTetWild envelope: how far the mesh surfaces may deviate from "
-            "the PLYs, relative to the bounding box diagonal (~0.3 m). Lower it "
-            "if fTetWild aborts while simplifying the surfaces."
+            "the PLYs, relative to the bounding box diagonal (~0.3 m). Larger "
+            "values fragment and enlarge the contact between ventricles, and "
+            "fTetWild can abort while simplifying the surfaces."
         ),
-    ] = 1.5e-3,
+    ] = 1e-3,
     coarsen: Annotated[
         bool,
         typer.Option(
@@ -173,7 +223,9 @@ def mesh(
 
     print(f"Generated mesh with {len(cell_array)} cells and {len(point_array)} points")
 
-    raw_markers = np.asarray(marker, dtype=np.int32).ravel()
+    raw_markers = _merge_stray_cells(
+        cell_array, np.asarray(marker, dtype=np.int32).ravel()
+    )
     labels = np.copy(raw_markers)
 
     print(f"Marker value distribution: {np.bincount(raw_markers)}")

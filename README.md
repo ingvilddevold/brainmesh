@@ -59,7 +59,9 @@ Uses fTetWild (wildmeshing) for volumetric mesh generation using the surface fil
 | `--v3v4-edge-mm` | 1.0 | Third and fourth ventricles, aqueduct |
 | `--coarse-edge-mm` | 10.0 | Everything else, mainly deep parenchyma |
 
-In the parenchyma, the folded pial surface keeps cells small (about 2.4 mm median), whatever `--coarse-edge-mm` is. `--epsilon` sets how far the mesh surfaces may deviate from the PLYs, relative to the bounding box diagonal. fTetWild can abort while simplifying the surfaces if it is too large: on sub01, 0.002 aborted and the default, 0.0015, did not.
+In the parenchyma, the folded pial surface keeps cells small (about 2.4 mm median), whatever `--coarse-edge-mm` is. `--epsilon` sets how far the mesh surfaces may deviate from the PLYs, relative to the bounding box diagonal. Keep it at the default, 0.001, or below: on sub03, 0.0015 enlarged the LV–V3 contact and split it into more fragments, and on sub01, 0.002 made fTetWild abort while simplifying the surfaces.
+
+Where surfaces nearly coincide (LV and V3 at the foramina of Monro, V3 and V4 at the aqueduct), fTetWild can leave a few cells with the wrong marker. These would show up as fragments on the interfaces and can partly block the aqueduct, so any cluster of parenchyma, LV, V4 or V3 cells cut off from the main region is merged into its neighbour. Small pockets of SAS enclosed by the parenchyma surface are kept.
 
 ```bash
 python generate_mesh.py \
