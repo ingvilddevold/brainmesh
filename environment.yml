@@ -1,0 +1,20 @@
+name: brainmesh
+channels:
+  - conda-forge
+dependencies:
+  - python=3.13
+  - fenics-dolfinx=0.10
+  - scifem
+  - numpy
+  - pathlib
+  - pyvista
+  - typer
+  - tqdm
+  - pyyaml
+  - nibabel
+  - meshio
+  - scipy
+  - scikit-image
+  - pip
+  - pip:
+    - wildmeshing==0.4.1
