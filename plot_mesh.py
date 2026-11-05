@@ -5,6 +5,7 @@ import numpy as np
 import pyvista as pv
 import typer
 from dolfinx import io, plot
+from matplotlib.colors import ListedColormap
 from mpi4py import MPI
 
 app = typer.Typer(add_completion=False)
@@ -19,7 +20,6 @@ ID_TO_COLOR = {
 }
 
 CLIP_NORMAL = "x"
-CLIP_ORIGIN = (-0.002, 0.0, 0.0)
 CLIP_INVERT = True
 
 
@@ -41,6 +41,7 @@ def _get_camera(grid_for_bounds):
 
 
 HIDDEN_OPACITY = 0.4
+EDGE_COLOR = "#3d4652"
 
 
 @app.command()
@@ -51,7 +52,7 @@ def plot_mesh(
             exists=True, dir_okay=False, resolve_path=True, help="XDMF mesh file"
         ),
     ],
-    output: Annotated[Path, typer.Argument(help="Output PNG (an .svg is also saved)")],
+    output: Annotated[Path, typer.Argument(help="Output PNG")],
     region_tag: Annotated[
         str, typer.Option(help="Meshtag with region IDs 1-5")
     ] = "subdomains_ftetwild",
@@ -62,8 +63,15 @@ def plot_mesh(
         bool, typer.Option(help="Translucent whole-brain outline")
     ] = True,
     clip: Annotated[
-        bool, typer.Option(help="Clip parenchyma/CSF along the midline")
+        bool, typer.Option(help="Clip parenchyma/CSF near the midline")
     ] = True,
+    clip_x_mm: Annotated[
+        float,
+        typer.Option(
+            help="Position (mm) of the clipping plane. The default is just off the "
+            "interhemispheric fissure, measured on sub01."
+        ),
+    ] = -4.0,
     ventricles_within_outline: Annotated[
         bool, typer.Option(help="Clip the ventricles too")
     ] = False,
@@ -71,6 +79,13 @@ def plot_mesh(
     csf_opacity: Annotated[float, typer.Option()] = 1.0,
     ventricle_opacity: Annotated[float, typer.Option()] = 1.0,
     outline_opacity: Annotated[float, typer.Option()] = 0.15,
+    crinkle: Annotated[
+        bool,
+        typer.Option(
+            help="Clip along whole cells and draw their edges, to show the mesh "
+            "rather than smooth surfaces."
+        ),
+    ] = False,
     ambient: Annotated[float, typer.Option(help="Ambient lighting (0-1)")] = 0.3,
     window_size: Annotated[int, typer.Option(help="Render size in pixels")] = 1400,
 ):
@@ -87,7 +102,11 @@ def plot_mesh(
     grid.cell_data["region"] = region
 
     camera = _get_camera(grid)
-    clip_kwargs = {"normal": CLIP_NORMAL, "origin": CLIP_ORIGIN, "invert": CLIP_INVERT}
+    clip_kwargs = {
+        "normal": CLIP_NORMAL,
+        "origin": (clip_x_mm * 1e-3, 0.0, 0.0),
+        "invert": CLIP_INVERT,
+    }
 
     plotter = pv.Plotter(off_screen=True, window_size=(window_size, window_size))
     plotter.set_background(None)
@@ -99,7 +118,34 @@ def plot_mesh(
             outline, color=ID_TO_COLOR[CSF_ID], opacity=outline_opacity, ambient=ambient
         )
 
-    if include_parenchyma:
+    if crinkle:
+        style = dict(
+            scalars="region",
+            cmap=ListedColormap([ID_TO_COLOR[i] for i in sorted(ID_TO_COLOR)]),
+            clim=[0.5, 5.5],
+            show_edges=True,
+            edge_color=EDGE_COLOR,
+            line_width=0.4,
+            ambient=ambient,
+            show_scalar_bar=False,
+        )
+        tissue = [
+            region_id
+            for region_id, include in ((CSF_ID, include_csf), (PAR_ID, include_parenchyma))
+            if include
+        ]
+        ventricles = grid.extract_cells(np.isin(region, (LV_ID, V4_ID, V3_ID)))
+        if tissue:
+            mesh_t = grid.extract_cells(np.isin(region, tissue))
+            plotter.add_mesh(
+                mesh_t.clip(**clip_kwargs, crinkle=True) if clip else mesh_t, **style
+            )
+        if include_ventricles:
+            if clip and ventricles_within_outline:
+                ventricles = ventricles.clip(**clip_kwargs, crinkle=True)
+            plotter.add_mesh(ventricles, **style)
+
+    if include_parenchyma and not crinkle:
         grid_parenchyma = grid.extract_cells(region == PAR_ID)
         mesh_p = grid_parenchyma.clip(**clip_kwargs) if clip else grid_parenchyma
         plotter.add_mesh(
@@ -110,7 +156,7 @@ def plot_mesh(
             ambient=ambient,
         )
 
-    if include_csf:
+    if include_csf and not crinkle:
         grid_csf = grid.extract_cells(region == CSF_ID)
         mesh_c = grid_csf.clip(**clip_kwargs) if clip else grid_csf
         plotter.add_mesh(
@@ -121,7 +167,7 @@ def plot_mesh(
             ambient=ambient,
         )
 
-    if include_ventricles:
+    if include_ventricles and not crinkle:
         clip_ventricles = clip and ventricles_within_outline
         for region_id in (LV_ID, V4_ID, V3_ID):
             vol = grid.extract_cells(region == region_id)
@@ -139,9 +185,8 @@ def plot_mesh(
     plotter.remove_bounding_box()
     output.parent.mkdir(parents=True, exist_ok=True)
     plotter.screenshot(str(output), transparent_background=True)
-    plotter.save_graphic(str(output.with_suffix(".svg")))
     plotter.close()
-    print(f"Saved to: {output} (+ .svg)")
+    print(f"Saved to: {output}")
 
 
 if __name__ == "__main__":
