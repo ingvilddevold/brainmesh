@@ -2,6 +2,9 @@
 
 Complete pipeline for generating brain meshes with local refinement from MRI segmentations.
 
+<p align="center"><img src="img/brainmesh.png" alt="brain mesh" width="300"/></p>
+<p align="center">Example mesh</p>
+
 ## Environment setup
 Before running the pipeline, set up the conda environment with:
 ```bash
